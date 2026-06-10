@@ -79,16 +79,19 @@ discover_devices() {
 get_hid_handles() {
   python3 << 'PYEOF'
 import subprocess, re
-r = subprocess.run(['ioreg', '-r', '-c', 'IOBluetoothHIDDriver', '-l', '-w', '0'],
+r = subprocess.run(['ioreg', '-r', '-c', 'IOBluetoothDevice', '-l', '-w', '0'],
                    capture_output=True, text=True)
 h = None
+addr = None
 for line in r.stdout.splitlines():
     m = re.search(r'"ConnectionHandle" = (\d+)', line)
     if m: h = m.group(1)
-    m = re.search(r'"DeviceAddress" = "([^"]+)"', line)
-    if m and h and h != '4095':
-        print(f'{m.group(1)}|{h}')
-        h = None
+    m = re.search(r'"BD_ADDR" = <([0-9a-fA-F]+)>', line)
+    if m: addr = m.group(1)
+    if h and addr and h != '4095':
+        addr_str = '-'.join(addr[i:i+2] for i in range(0, len(addr), 2))
+        print(f'{addr_str}|{h}')
+        h = None; addr = None
 PYEOF
 }
 
