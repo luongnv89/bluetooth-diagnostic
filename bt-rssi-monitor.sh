@@ -132,10 +132,11 @@ build_device_list() {
       local h_handle="${hid##*|}"
       for i in "${!DEV_ADDRS[@]}"; do
         if [ "${DEV_TYPES[$i]}" = "classic_hid" ]; then
-          local dev_norm=$(echo "${DEV_ADDRS[$i]}" | tr -cd 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]')
-          local hid_norm=$(echo "$h_addr" | tr -cd 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]')
+          local dev_norm hid_norm
+          dev_norm=$(echo "${DEV_ADDRS[$i]}" | tr -cd 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]') || true
+          hid_norm=$(echo "$h_addr" | tr -cd 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]') || true
           if [ "$dev_norm" = "$hid_norm" ]; then
-            DEV_HANDLES[$i]="$h_handle"
+            DEV_HANDLES[i]="$h_handle"
             break
           fi
         fi
@@ -293,9 +294,10 @@ rssi_bar() {
 
 a2dp_summary() {
   local line="$1"
-  local rssi=$(echo "$line" | grep -oE 'RSSI =  -?[0-9]+' | awk '{print $3}')
-  local txpwr=$(echo "$line" | grep -oE 'TxPwr =  -?[0-9]+' | awk '{print $3}')
-  local retx=$(echo "$line" | grep -oE 'ReTx =  [0-9.]+%' | awk '{print $3}')
+  local rssi txpwr retx
+  rssi=$(echo "$line" | grep -oE 'RSSI =  -?[0-9]+' | awk '{print $3}') || true
+  txpwr=$(echo "$line" | grep -oE 'TxPwr =  -?[0-9]+' | awk '{print $3}') || true
+  retx=$(echo "$line" | grep -oE 'ReTx =  [0-9.]+%' | awk '{print $3}') || true
   echo "$rssi|$txpwr|$retx"
 }
 
@@ -331,30 +333,37 @@ oneshot() {
     MIN=$(echo -e "$SAMPLES" | awk 'BEGIN{m=999}{if($1<m) m=$1} END{printf "%.0f", m}')
     MAX=$(echo -e "$SAMPLES" | awk 'BEGIN{m=-999}{if($1>m) m=$1} END{printf "%.0f", m}')
     CNT=$(echo -e "$SAMPLES" | wc -l | tr -d ' ')
-    local tx_s=$(classic_tx_count "$handle" 15)
+    local tx_s
+    tx_s=$(classic_tx_count "$handle" 15) || true
     EXTRA="TX: ${tx_s} keystrokes/15s"
 
   elif [ "$type" = "a2dp" ]; then
-    local line=$(a2dp_rssi 15)
+    local line
+    line=$(a2dp_rssi 15) || true
     if [ -n "$line" ]; then
-      local s=$(a2dp_summary "$line")
-      local a2dp_rssi=$(echo "$s" | awk -F'|' '{print $1}')
-      local txpwr=$(echo "$s" | awk -F'|' '{print $2}')
-      local retx=$(echo "$s" | awk -F'|' '{print $3}')
+      local s
+      s=$(a2dp_summary "$line") || true
+      local a2dp_rssi txpwr retx
+      a2dp_rssi=$(echo "$s" | awk -F'|' '{print $1}') || true
+      txpwr=$(echo "$s" | awk -F'|' '{print $2}') || true
+      retx=$(echo "$s" | awk -F'|' '{print $3}') || true
       AVG="$a2dp_rssi"; MIN="$a2dp_rssi"; MAX="$a2dp_rssi"; CNT="1"
       [ -n "$txpwr" ] && EXTRA="TxPower: ${txpwr} dBm  |  ReTx: ${retx}"
     fi
     # Fallback: try profiler (BLE RSSI may not match A2DP addr, but worth a shot)
     if [ -z "$AVG" ]; then
-      local prof_rssi=$(profiler_rssi "$addr")
+      local prof_rssi
+      prof_rssi=$(profiler_rssi "$addr") || true
       if [ -n "$prof_rssi" ]; then
         AVG="$prof_rssi"; MIN="$prof_rssi"; MAX="$prof_rssi"; CNT="1"
       fi
       # Try fetching classic log RSSI too (without specific handle)
       if [ -z "$AVG" ]; then
-        local classic_log=$(/usr/bin/log show --predicate 'subsystem == "com.apple.bluetooth" AND composedMessage CONTAINS[c] "A2DP LinkQualityReport"' --last 30s --style compact 2>/dev/null | tail -1)
+        local classic_log
+        classic_log=$(/usr/bin/log show --predicate 'subsystem == "com.apple.bluetooth" AND composedMessage CONTAINS[c] "A2DP LinkQualityReport"' --last 30s --style compact 2>/dev/null | tail -1) || true
         [ -n "$classic_log" ] && {
-          local cr=$(echo "$classic_log" | grep -oE 'RSSI =  -?[0-9]+' | awk '{print $3}')
+          local cr
+          cr=$(echo "$classic_log" | grep -oE 'RSSI =  -?[0-9]+' | awk '{print $3}') || true
           [ -n "$cr" ] && { AVG="$cr"; MIN="$cr"; MAX="$cr"; CNT="1"; EXTRA="RSSI from A2DP log (no streaming?)"; }
         }
       fi
@@ -364,7 +373,8 @@ oneshot() {
     AVG=$(profiler_rssi "$addr")
     if [ -n "$AVG" ]; then
       MIN="$AVG"; MAX="$AVG"; CNT="1"
-      local batt=$(profiler_battery "$addr")
+      local batt
+      batt=$(profiler_battery "$addr") || true
       [ -n "$batt" ] && EXTRA="Battery: ${batt}"
     fi
   fi
@@ -416,12 +426,15 @@ livestream() {
     printf -- "  %-11s %6s  %-20s  %s\n" "Time" "RSSI" "Signal" "Link Quality"
     printf -- "  %-11s %6s  %-20s  %s\n" "----" "----" "------" "------------"
     while true; do
-      local line=$(a2dp_rssi "$INTERVAL")
+      local line
+      line=$(a2dp_rssi "$INTERVAL") || true
       if [ -n "$line" ]; then
-        local s=$(a2dp_summary "$line")
-        local S=$(echo "$s" | awk -F'|' '{print $1}')
-        local txpwr=$(echo "$s" | awk -F'|' '{print $2}')
-        local retx=$(echo "$s" | awk -F'|' '{print $3}')
+        local s
+        s=$(a2dp_summary "$line") || true
+        local S txpwr retx
+        S=$(echo "$s" | awk -F'|' '{print $1}') || true
+        txpwr=$(echo "$s" | awk -F'|' '{print $2}') || true
+        retx=$(echo "$s" | awk -F'|' '{print $3}') || true
         if [ -n "$S" ]; then
           [ "$S" -ge -50 ] && C="$GRN" || [ "$S" -ge -75 ] && C="$YEL" || C="$RED"
           BAR=$(rssi_bar "$S")
@@ -429,7 +442,8 @@ livestream() {
             "$(date +%H:%M:%S)" "$S" "$BAR" "$txpwr" "$retx"
         fi
       else
-        local S=$(profiler_rssi "$addr")
+        local S
+        S=$(profiler_rssi "$addr") || true
         if [ -n "$S" ]; then
           [ "$S" -ge -50 ] && C="$GRN" || [ "$S" -ge -75 ] && C="$YEL" || C="$RED"
           BAR=$(rssi_bar "$S")
